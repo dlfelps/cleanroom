@@ -26,6 +26,7 @@ import sys
 from cleanroom.audit import build_audit_logger
 from cleanroom.config import build_llm_instances
 from cleanroom.graphs.main_graph import build_main_graph
+from cleanroom.ingestion import ingest_github_repo
 from cleanroom.spec_store import build_spec_store
 from cleanroom.state import CleanRoomState
 from cleanroom.tools import bind_tools_to_store
@@ -37,11 +38,16 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Analyse and implement a single module
-  python main.py --project-id proj-001 --module auth_module --language Python
+  # Point at a GitHub repo and reimplement a single module
+  python main.py --project-id tomli-001 \\
+      --target-url https://github.com/hukkin/tomli \\
+      --docs-url https://toml.io/en/v1.0.0 \\
+      --module tomli
 
-  # Analyse and implement multiple modules (dependency order is automatic)
-  python main.py --project-id proj-001 --modules auth_module session_module user_module --language Python
+  # Multiple modules
+  python main.py --project-id proj-001 \\
+      --target-url https://github.com/owner/repo \\
+      --modules auth session user
 
   # Resume a project (spec store state is loaded from persistence)
   python main.py --project-id proj-001 --resume
@@ -67,6 +73,23 @@ Examples:
         help="Target language for the implementation (default: Python).",
     )
     parser.add_argument(
+        "--target-url",
+        help=(
+            "GitHub URL of the project to reimplement, e.g. "
+            "https://github.com/hukkin/tomli  "
+            "The repository is downloaded automatically."
+        ),
+    )
+    parser.add_argument(
+        "--docs-url",
+        nargs="+",
+        metavar="URL",
+        help=(
+            "One or more public documentation URLs to include in the quarantine "
+            "zone (e.g. the official spec page).  Fetched at startup."
+        ),
+    )
+    parser.add_argument(
         "--resume",
         action="store_true",
         help="Resume a project by loading existing spec store state.",
@@ -86,17 +109,28 @@ def build_initial_state(args: argparse.Namespace) -> CleanRoomState:
         print("ERROR: Specify at least one module with --module or --modules.", file=sys.stderr)
         sys.exit(1)
 
+    quarantine_artifacts: list = []
+
+    if args.target_url:
+        print(f"\nIngesting source from: {args.target_url}")
+        quarantine_artifacts = ingest_github_repo(
+            github_url=args.target_url,
+            modules=modules,
+            docs_urls=getattr(args, "docs_url", None),
+        )
+        print(f"  Total quarantine artifacts: {len(quarantine_artifacts)}")
+    elif getattr(args, "docs_url", None):
+        # docs URLs provided without a source repo — fetch docs only.
+        from cleanroom.ingestion import _fetch_doc_url
+        for url in args.docs_url:
+            doc = _fetch_doc_url(url, modules[0])
+            if doc:
+                quarantine_artifacts.append(doc)
+
     return CleanRoomState(
         project_id=args.project_id,
         target_language=args.language,
-        quarantine_artifacts=[
-            # TODO: Populate with actual source files, running system access,
-            # and documentation pointers for the target system.
-            # Example:
-            # {"type": "source",       "path": "/path/to/source", "module": m}
-            # {"type": "public_docs",  "url":  "https://...",     "module": m}
-            # {"type": "observation",  "data": {...},             "module": m}
-        ],
+        quarantine_artifacts=quarantine_artifacts,
         analysis_queue=modules,
         spec_store_documents=[],
         implementation_queue=modules,
@@ -120,7 +154,7 @@ def main() -> None:
     print()
 
     # --- Step 1: Build infrastructure ---
-    print("Initialising LLM instances (3 zone-isolated keys)...")
+    print("Initialising LLM instances...")
     try:
         llm_instances = build_llm_instances()
     except EnvironmentError as e:
@@ -129,6 +163,7 @@ def main() -> None:
     print("  ✓ analysis LLM  (QUARANTINE_ZONE_API_KEY)")
     print("  ✓ guard LLM     (GUARD_API_KEY)")
     print("  ✓ impl LLM      (IMPL_ZONE_API_KEY)")
+    print("  (All three may point to the same key — see README for details.)")
 
     print("\nInitialising spec store...")
     spec_store = build_spec_store()

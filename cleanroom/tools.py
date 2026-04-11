@@ -218,23 +218,56 @@ def read_public_docs(source: str, section: str | None = None) -> str:
     Parameters
     ----------
     source:
-        A file path or URL identifying the documentation source.
+        A URL identifying the documentation source.
     section:
         Optional section heading to extract, to avoid loading entire documents.
 
     Returns
     -------
     str
-        The raw text of the requested documentation.
-
-    TODO
-    ----
-    * Validate that *source* refers to a permitted public documentation source.
-    * Fetch or read the content.
-    * Extract *section* if provided.
+        The raw text of the requested documentation, or a JSON error object
+        if the source cannot be fetched.
     """
-    # TODO: implement documentation fetcher
-    return '{"status": "not_implemented", "message": "read_public_docs requires a document fetcher."}'
+    from cleanroom.ingestion import fetch_url
+
+    try:
+        content = fetch_url(source)
+    except RuntimeError as exc:
+        import json
+        return json.dumps({"status": "error", "message": str(exc)})
+
+    if section:
+        content = _extract_section(content, section)
+
+    return content
+
+
+def _extract_section(content: str, section: str) -> str:
+    """
+    Extract the subsection of *content* whose heading contains *section*.
+
+    Works for both Markdown (``#`` headings) and reStructuredText (underline
+    headings).  Returns the full content unchanged if the section is not found.
+    """
+    lines = content.splitlines()
+    result: list[str] = []
+    in_section = False
+    section_lower = section.lower()
+
+    for i, line in enumerate(lines):
+        is_heading = line.startswith("#") or (
+            i + 1 < len(lines) and lines[i + 1] and all(c in "=-~^" for c in lines[i + 1])
+        )
+        if is_heading:
+            if section_lower in line.lower():
+                in_section = True
+            elif in_section:
+                break  # reached the next heading at the same or higher level
+
+        if in_section:
+            result.append(line)
+
+    return "\n".join(result) if result else content
 
 
 # ---------------------------------------------------------------------------
