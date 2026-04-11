@@ -15,7 +15,7 @@ Given an existing software system, Cleanroom:
 ## Requirements
 
 - Python 3.10+
-- Anthropic API keys (three separate keys are recommended for full zone isolation)
+- An Anthropic API key (one key is sufficient; multiple keys can be used to separate billing by zone)
 
 ## Installation
 
@@ -39,7 +39,7 @@ Copy `.env.example` to `.env` and set the following:
 | `IMPL_MODEL` | Claude model for implementation (default: `claude-sonnet-4-20250514`) |
 | `SPEC_STORE_BACKEND` | `memory` (development) or `s3` (production) |
 
-Using three separate API keys is the recommended configuration for strong zone isolation — it makes cross-zone information leakage detectable at the infrastructure level.
+A single API key works fine — the Anthropic API is stateless, so there is no context sharing between calls regardless of which key is used. Zone isolation is enforced by prompt instructions and the state filtering in `state.py`, not by the API key. Using separate keys per zone is optional; the only benefit is per-zone billing visibility in the Anthropic dashboard.
 
 ## Usage
 
