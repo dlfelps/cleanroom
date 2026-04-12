@@ -70,7 +70,7 @@ def build_analysis_coordinator_node(analysis_subgraph: Any):
         """
         # Build isolated context: only quarantine zone keys are allowed here.
         context = build_isolated_context(
-            allowed_keys=["quarantine_artifacts", "analysis_queue", "current_module", "project_id"],
+            allowed_keys=["quarantine_artifacts", "analysis_queue", "current_module"],
             state=state,
             node_zone="analysis",
         )

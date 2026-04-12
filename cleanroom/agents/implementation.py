@@ -99,7 +99,6 @@ def build_implementation_agent_node(impl_llm: Any):
                 "pending_guard_decisions",
                 "current_module",
                 "target_language",
-                "project_id",
             ],
             state=state,
             node_zone="implementation",

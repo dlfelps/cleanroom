@@ -210,7 +210,6 @@ class CleanRoomState(TypedDict):
     """
 
     # --- Project metadata (readable by all) ---
-    project_id: str
     target_language: str
 
     # --- Analysis / quarantine zone (NEVER readable by implementation agent) ---
