@@ -224,6 +224,7 @@ class CleanRoomState(TypedDict):
     implementation_queue: list[str]     # modules pending implementation
     completed_modules: list[str]
     spec_gap_requests: list[SpecGapRequest]
+    generated_files: list[dict[str, Any]]  # [{"module": str, "filename": str, "content": str}]
 
     # --- Guard state ---
     pending_guard_decisions: list[GuardDecision]

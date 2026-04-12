@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 
 from cleanroom.audit import build_audit_logger
 from cleanroom.config import build_llm_instances
@@ -90,6 +91,12 @@ Examples:
         ),
     )
     parser.add_argument(
+        "--output-dir",
+        default="output",
+        metavar="DIR",
+        help="Directory to write generated implementation files (default: ./output).",
+    )
+    parser.add_argument(
         "--resume",
         action="store_true",
         help="Resume a project by loading existing spec store state.",
@@ -141,7 +148,32 @@ def build_initial_state(args: argparse.Namespace) -> CleanRoomState:
         human_review_queue=[],
         current_module=None,
         error=None,
+        generated_files=[],
     )
+
+
+def _write_output(state: CleanRoomState, output_dir: str, project_id: str) -> None:
+    """
+    Write generated implementation files from state to disk.
+
+    Files land in ``<output_dir>/<project_id>/`` preserving any subdirectory
+    structure present in their filenames.  Existing files are overwritten so
+    resumed runs converge correctly.
+    """
+    files = state.get("generated_files", [])
+    if not files:
+        print("\nNo generated files to write.")
+        return
+
+    root = Path(output_dir) / project_id
+    root.mkdir(parents=True, exist_ok=True)
+
+    print(f"\nWriting {len(files)} generated file(s) to {root}/")
+    for entry in files:
+        dest = root / entry["filename"]
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(entry["content"], encoding="utf-8")
+        print(f"  ✓ {dest}")
 
 
 def main() -> None:
@@ -213,6 +245,8 @@ def main() -> None:
 
     if final_state.get("error"):
         print(f"\nFinal error: {final_state['error']}")
+
+    _write_output(final_state, args.output_dir, args.project_id)
 
     metrics = audit_logger.metrics_summary()
     print("\nPipeline health metrics:")

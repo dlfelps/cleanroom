@@ -228,19 +228,64 @@ def _parse_implementation_output(
       - Signal module completion (submit for verification)
       - Submit a spec gap request via the submit_clarification tool
 
-    For the skeleton, this returns a minimal state update.  Production code
-    should parse the response content and tool calls more thoroughly.
+    Code blocks in the response text are extracted and appended to
+    ``generated_files`` in state so the output writer can persist them.
     """
     updates: dict[str, Any] = {}
 
     tool_calls = getattr(response, "tool_calls", []) or []
     for call in tool_calls:
         if call.get("name") == "submit_clarification":
-            # The tool itself records the gap request; here we just mark it.
             updates["_submitted_for_verification"] = False
+
+    # Extract fenced code blocks and accumulate them as generated files.
+    content = getattr(response, "content", "") or ""
+    new_files = _extract_code_blocks(content, module)
+    if new_files:
+        existing = list(state.get("generated_files", []) or [])
+        updates["generated_files"] = existing + new_files
 
     # TODO: detect when the agent signals module completion and add to
     # completed_modules.  For now, the agent signals this via a specific
     # pattern in its text response or a dedicated "complete_module" tool.
 
     return updates
+
+
+def _extract_code_blocks(text: str, module: str) -> list[dict[str, Any]]:
+    """
+    Extract fenced code blocks from *text* and return them as file dicts.
+
+    Recognises two fence formats::
+
+        ```python filename=myfile.py
+        ...code...
+        ```
+
+        ```python
+        ...code...
+        ```
+
+    When no filename is specified in the fence, the block is numbered and
+    named ``{module}_{n}.py``.  Non-Python fences (e.g. ````` ```toml `````)
+    are skipped.
+    """
+    import re
+
+    files: list[dict[str, Any]] = []
+    # Match ```<lang>[optional filename=...]\n<body>\n```
+    pattern = re.compile(
+        r"```(?P<lang>\w+)(?:[^\S\n]+filename=(?P<filename>\S+))?\n(?P<body>.*?)```",
+        re.DOTALL,
+    )
+    counter = 1
+    for match in pattern.finditer(text):
+        lang = match.group("lang").lower()
+        if lang not in ("python", "py"):
+            continue
+        filename = match.group("filename") or f"{module}_{counter}.py"
+        body = match.group("body")
+        files.append({"module": module, "filename": filename, "content": body})
+        counter += 1
+
+    return files
