@@ -210,7 +210,6 @@ class CleanRoomState(TypedDict):
     """
 
     # --- Project metadata (readable by all) ---
-    project_id: str
     target_language: str
 
     # --- Analysis / quarantine zone (NEVER readable by implementation agent) ---
@@ -224,6 +223,7 @@ class CleanRoomState(TypedDict):
     implementation_queue: list[str]     # modules pending implementation
     completed_modules: list[str]
     spec_gap_requests: list[SpecGapRequest]
+    generated_files: list[dict[str, Any]]  # [{"module": str, "filename": str, "content": str}]
 
     # --- Guard state ---
     pending_guard_decisions: list[GuardDecision]

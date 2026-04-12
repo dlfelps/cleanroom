@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 
 from cleanroom.audit import build_audit_logger
 from cleanroom.config import build_llm_instances
@@ -39,24 +40,17 @@ def parse_args() -> argparse.Namespace:
         epilog="""
 Examples:
   # Point at a GitHub repo and reimplement a single module
-  python main.py --project-id tomli-001 \\
-      --target-url https://github.com/hukkin/tomli \\
+  python main.py --target-url https://github.com/hukkin/tomli \\
       --docs-url https://toml.io/en/v1.0.0 \\
       --module tomli
 
   # Multiple modules
-  python main.py --project-id proj-001 \\
-      --target-url https://github.com/owner/repo \\
+  python main.py --target-url https://github.com/owner/repo \\
       --modules auth session user
 
-  # Resume a project (spec store state is loaded from persistence)
-  python main.py --project-id proj-001 --resume
+  # Resume a run
+  python main.py --resume
 """,
-    )
-    parser.add_argument(
-        "--project-id",
-        required=True,
-        help="Unique identifier for this clean room project.",
     )
     parser.add_argument(
         "--module",
@@ -88,6 +82,12 @@ Examples:
             "One or more public documentation URLs to include in the quarantine "
             "zone (e.g. the official spec page).  Fetched at startup."
         ),
+    )
+    parser.add_argument(
+        "--output-dir",
+        default="output",
+        metavar="DIR",
+        help="Directory to write generated implementation files (default: ./output).",
     )
     parser.add_argument(
         "--resume",
@@ -128,7 +128,6 @@ def build_initial_state(args: argparse.Namespace) -> CleanRoomState:
                 quarantine_artifacts.append(doc)
 
     return CleanRoomState(
-        project_id=args.project_id,
         target_language=args.language,
         quarantine_artifacts=quarantine_artifacts,
         analysis_queue=modules,
@@ -141,14 +140,38 @@ def build_initial_state(args: argparse.Namespace) -> CleanRoomState:
         human_review_queue=[],
         current_module=None,
         error=None,
+        generated_files=[],
     )
+
+
+def _write_output(state: CleanRoomState, output_dir: str) -> None:
+    """
+    Write generated implementation files from state to disk.
+
+    Files land in *output_dir*, preserving any subdirectory structure present
+    in their filenames.  Existing files are overwritten so resumed runs
+    converge correctly.
+    """
+    files = state.get("generated_files", [])
+    if not files:
+        print("\nNo generated files to write.")
+        return
+
+    root = Path(output_dir)
+    root.mkdir(parents=True, exist_ok=True)
+
+    print(f"\nWriting {len(files)} generated file(s) to {root}/")
+    for entry in files:
+        dest = root / entry["filename"]
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(entry["content"], encoding="utf-8")
+        print(f"  ✓ {dest}")
 
 
 def main() -> None:
     args = parse_args()
 
     print(f"\nClean Room Implementation System")
-    print(f"Project ID:    {args.project_id}")
     print(f"Target lang:   {args.language}")
     print(f"Modules:       {args.modules or [args.module]}")
     print()
@@ -189,7 +212,7 @@ def main() -> None:
     # --- Step 4: Build initial state and run ---
     initial_state = build_initial_state(args)
 
-    print(f"\nStarting pipeline for project '{args.project_id}'...")
+    print(f"\nStarting pipeline...")
     print("=" * 70)
 
     try:
@@ -213,6 +236,8 @@ def main() -> None:
 
     if final_state.get("error"):
         print(f"\nFinal error: {final_state['error']}")
+
+    _write_output(final_state, args.output_dir)
 
     metrics = audit_logger.metrics_summary()
     print("\nPipeline health metrics:")
